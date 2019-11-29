@@ -15,4 +15,11 @@ then
     conda update -q conda
     conda info -a
     conda create -q -n testenv python=$TRAVIS_PYTHON_VERSION numpy scipy pip
+    if [[ $TRAVIS_PYTHON_VERSION == *'2.7'* ]]
+    then
+        conda create -q -n py26 python=2.6 numpy scipy pip pytest six
+        export PY26_EXECUTABLE="$HOME/miniconda/envs/py26/bin/python"
+        conda create -q -n py37 python=3.7 numpy scipy pip pytest six
+        export PY37_EXECUTABLE="$HOME/miniconda/envs/py37/bin/python"
+    fi
 fi

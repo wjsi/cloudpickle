@@ -2,7 +2,7 @@ import sys
 import os
 import os.path as op
 import tempfile
-from subprocess import Popen, check_output, PIPE, STDOUT, CalledProcessError
+from subprocess import Popen, PIPE, STDOUT, CalledProcessError
 
 from cloudpickle import dumps
 from pickle import loads
@@ -15,6 +15,24 @@ except ImportError:
     class TimeoutExpired(Exception):
         pass
     timeout_supported = False
+
+try:
+    from subprocess import check_output
+except ImportError:
+    import subprocess
+
+    def check_output(*popenargs, **kwargs):
+        if 'stdout' in kwargs:
+            raise ValueError('stdout argument not allowed, it will be overridden.')
+        process = subprocess.Popen(stdout=subprocess.PIPE, *popenargs, **kwargs)
+        output, unused_err = process.communicate()
+        retcode = process.poll()
+        if retcode:
+            cmd = kwargs.get("args")
+            if cmd is None:
+                cmd = popenargs[0]
+            raise subprocess.CalledProcessError(retcode, cmd)
+        return output
 
 
 TEST_GLOBALS = "a test value"

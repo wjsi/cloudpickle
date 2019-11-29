@@ -17,6 +17,7 @@ import sys
 import textwrap
 import types
 import unittest
+import warnings
 import weakref
 import os
 
@@ -26,6 +27,10 @@ except ImportError:
     from io import StringIO
 
 import pytest
+import six
+
+warnings.filterwarnings("ignore", message="numpy.dtype size changed")
+warnings.filterwarnings("ignore", message="numpy.ufunc size changed")
 
 try:
     # try importing numpy and scipy. These are not hard dependencies and
@@ -147,6 +152,8 @@ class CloudPickleTest(unittest.TestCase):
         except NameError:  # Python 3 does no longer support buffers
             pass
 
+    @pytest.mark.skipif(sys.version_info < (2, 7),
+                        reason="no memoryview support in old Python versions")
     def test_memoryview(self):
         buffer_obj = memoryview(b"Hello")
         self.assertEqual(pickle_depickle(buffer_obj, protocol=self.protocol),
@@ -160,6 +167,8 @@ class CloudPickleTest(unittest.TestCase):
         self.assertEqual(pickle_depickle(buffer_obj, protocol=self.protocol),
                          buffer_obj.tobytes())
 
+    @pytest.mark.skipif(sys.version_info < (2, 7),
+                        reason="no memoryview support in old Python versions")
     def test_large_memoryview(self):
         buffer_obj = memoryview(b"Hello!" * int(1e7))
         self.assertEqual(pickle_depickle(buffer_obj, protocol=self.protocol),
@@ -228,7 +237,7 @@ class CloudPickleTest(unittest.TestCase):
 
     def test_unhashable_closure(self):
         def f():
-            s = {1, 2}  # mutable set is unhashable
+            s = set([1, 2])  # mutable set is unhashable
 
             def g():
                 return len(s)
@@ -427,7 +436,7 @@ class CloudPickleTest(unittest.TestCase):
             def method(self, x):
                 return f(x)
         '''
-        exec(textwrap.dedent(code), mod.__dict__)
+        six.exec_(textwrap.dedent(code), mod.__dict__)
         mod2 = pickle_depickle(mod, protocol=self.protocol)
         self.assertEqual(mod.x, mod2.x)
         self.assertEqual(mod.f(5), mod2.f(5))
@@ -695,7 +704,7 @@ class CloudPickleTest(unittest.TestCase):
         nvars = 65537 + 258
         names = ['g%d' % i for i in range(1, nvars)]
         r = random.Random(42)
-        d = {name: r.randrange(100) for name in names}
+        d = dict((name, r.randrange(100)) for name in names)
         # def f(x):
         #     x = g1, g2, ...
         #     return zlib.crc32(bytes(bytearray(x)))
@@ -706,7 +715,7 @@ class CloudPickleTest(unittest.TestCase):
             x = {tup}
             return zlib.crc32(bytes(bytearray(x)))
         """.format(tup=', '.join(names))
-        exec(textwrap.dedent(code), d, d)
+        six.exec_(textwrap.dedent(code), d, d)
         f = d['f']
         res = f()
         data = cloudpickle.dumps([f, f])
@@ -834,7 +843,7 @@ class CloudPickleTest(unittest.TestCase):
         out, _ = proc.communicate()
         self.assertEqual(proc.wait(), 0)
         self.assertEqual(out.strip().decode(),
-                         'INFO:{}:hello'.format(logger.name))
+                         'INFO:{0}:hello'.format(logger.name))
 
     def test_logger(self):
         # logging.RootLogger object
@@ -879,6 +888,7 @@ class CloudPickleTest(unittest.TestCase):
 
         self.assertEqual(DepickledBaseSubclass().foo(), 'it works for realz!')
 
+    @pytest.mark.skipif(sys.version_info < (2, 7), reason="No WeakSets on py26.")
     def test_weakset_identity_preservation(self):
         # Test that weaksets don't lose all their inhabitants if they're
         # pickled in a larger data structure that includes other references to
@@ -900,7 +910,7 @@ class CloudPickleTest(unittest.TestCase):
         self.assertEqual(depickled3.x, 3)
         self.assertEqual(len(weakset), 2)
 
-        self.assertEqual(set(weakset), {depickled1, depickled2})
+        self.assertEqual(set(weakset), set([depickled1, depickled2]))
 
     def test_faulty_module(self):
         for module_name in ['_faulty_module', '_missing_module', None]:
@@ -1087,6 +1097,7 @@ class CloudPickleTest(unittest.TestCase):
                                         clone_func=clone_func)
             assert_run_python_script(textwrap.dedent(code))
 
+    @pytest.mark.skipif(sys.version_info < (2, 7), reason="does not support python 2.6")
     def test_closure_interacting_with_a_global_variable(self):
         global _TEST_GLOBAL_VARIABLE
         assert _TEST_GLOBAL_VARIABLE == "default_value"
@@ -1242,7 +1253,10 @@ class CloudPickleTest(unittest.TestCase):
         self.assertEqual(depickled_method('b'), None)
 
     def test_itertools_count(self):
-        counter = itertools.count(1, step=2)
+        if sys.version_info < (2, 7):
+            counter = itertools.count(1)
+        else:
+            counter = itertools.count(1, step=2)
 
         # advance the counter a bit
         next(counter)
@@ -1284,9 +1298,9 @@ class CloudPickleTest(unittest.TestCase):
 
         self.assertEqual(f2.__doc__, f.__doc__)
 
-    @unittest.skipIf(sys.version_info < (3, 7),
-                     """This syntax won't work on py2 and pickling annotations
-                     isn't supported for py36 and below.""")
+    @pytest.mark.skipif(sys.version_info < (3, 7),
+                        reason="""This syntax won't work on py2 and pickling annotations
+                        isn't supported for py36 and below.""")
     def test_wraps_preserves_function_annotations(self):
         from functools import wraps
 
